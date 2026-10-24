@@ -1,6 +1,18 @@
 # UNLOSS Simulation
 
-A minimal, local, database-backed simulation of seller → delivery person → customer parcel handoff. It is an independent project with its own SQLite database and fictional accounts. It does not use the original UNLOSS repository's database, credentials, or production data.
+UNLOSS Simulation is a minimal end-to-end parcel handoff prototype. It lets a seller create an order and one QR code, an assigned delivery person validate and start the delivery, and the customer confirm or reject receipt with a development-only OTP. It demonstrates the core UNLOSS problem: keeping seller, courier, and customer delivery status aligned with an auditable record of each attempt.
+
+This is an independent simulation with its own SQLite database, fictional accounts, and environment variables. It does not use the original UNLOSS repository's database, credentials, or production data.
+
+## Links
+
+- GitHub repository: [github.com/hrakashchauhan/UNLOSS-Simulation](https://github.com/hrakashchauhan/UNLOSS-Simulation)
+- Live UNLOSS product demo on Vercel: [unloss-web.vercel.app](https://unloss-web.vercel.app)
+- Simulation demo: run locally using the setup instructions below. The simulation repository is intentionally isolated from the deployed production product.
+
+## Idea, technology stack, and tools
+
+The prototype uses a role-based Express API with secure bcrypt password hashing, persistent Prisma sessions, SQLite migrations, transactional order updates, hashed and encrypted QR tokens, and attempt-bound OTP challenges. The frontend is a responsive React and Vite app with QR generation, browser camera scanning through ZXing, manual token fallback, and role-specific dashboards. Vitest and Supertest cover the accepted-delivery, duplicate-completion, rejection, and retry paths.
 
 ## Requirements
 
