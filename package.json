@@ -1,0 +1,14 @@
+{
+  "name": "unloss-simulation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:api": "npm --prefix api run dev",
+    "dev:web": "npm --prefix web run dev",
+    "build": "npm --prefix api run build && npm --prefix web run build",
+    "db:migrate": "npm --prefix api run db:migrate",
+    "db:seed": "npm --prefix api run db:seed",
+    "test:api": "npm --prefix api test",
+    "typecheck": "npm --prefix api run typecheck && npm --prefix web run typecheck"
+  }
+}

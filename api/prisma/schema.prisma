@@ -1,0 +1,109 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+model User {
+  id String @id @default(cuid())
+  name String
+  email String @unique
+  phone String @unique
+  passwordHash String
+  role String
+  status String @default("ACTIVE")
+  createdAt DateTime @default(now())
+  sessions Session[]
+  products Product[]
+  orders Order[] @relation("SellerOrders")
+  assignedOrders Order[] @relation("DeliveryOrders")
+  customerOrders Order[] @relation("CustomerOrders")
+}
+model Session {
+  id String @id
+  userId String
+  expiresAt DateTime
+  data String
+  user User @relation(fields:[userId], references:[id], onDelete:Cascade)
+  @@index([expiresAt])
+}
+model Product {
+  id String @id @default(cuid())
+  sellerId String
+  name String
+  description String?
+  createdAt DateTime @default(now())
+  seller User @relation(fields:[sellerId], references:[id])
+  items OrderItem[]
+  orders Order[]
+}
+model Order {
+  id String @id @default(cuid())
+  sellerId String
+  productId String
+  customerId String
+  deliveryId String
+  status String @default("CREATED")
+  address String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  seller User @relation("SellerOrders", fields:[sellerId], references:[id])
+  product Product @relation(fields:[productId], references:[id])
+  customer User @relation("CustomerOrders", fields:[customerId], references:[id])
+  delivery User @relation("DeliveryOrders", fields:[deliveryId], references:[id])
+  items OrderItem[]
+  qr QrToken?
+  attempts DeliveryAttempt[]
+  challenges VerificationChallenge[]
+  history StatusHistory[]
+}
+model OrderItem {
+  id String @id @default(cuid())
+  orderId String
+  productId String
+  quantity Int @default(1)
+  order Order @relation(fields:[orderId], references:[id], onDelete:Cascade)
+  product Product @relation(fields:[productId], references:[id])
+}
+model QrToken {
+  id String @id @default(cuid())
+  orderId String @unique
+  tokenHash String @unique
+  encryptedToken String
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  order Order @relation(fields:[orderId], references:[id], onDelete:Cascade)
+}
+model DeliveryAttempt {
+  id String @id @default(cuid())
+  orderId String
+  attemptNumber Int
+  status String @default("STARTED")
+  result String?
+  startedAt DateTime @default(now())
+  finishedAt DateTime?
+  order Order @relation(fields:[orderId], references:[id], onDelete:Cascade)
+  challenges VerificationChallenge[]
+  @@unique([orderId, attemptNumber])
+}
+model VerificationChallenge {
+  id String @id @default(cuid())
+  orderId String
+  attemptId String
+  codeHash String
+  expiresAt DateTime
+  usedAt DateTime?
+  order Order @relation(fields:[orderId], references:[id], onDelete:Cascade)
+  attempt DeliveryAttempt @relation(fields:[attemptId], references:[id], onDelete:Cascade)
+}
+model StatusHistory {
+  id String @id @default(cuid())
+  orderId String
+  status String
+  actorId String
+  note String?
+  createdAt DateTime @default(now())
+  order Order @relation(fields:[orderId], references:[id], onDelete:Cascade)
+  @@index([orderId, createdAt])
+}

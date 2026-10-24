@@ -1,0 +1,13 @@
+node_modules/
+dist/
+api/.env
+api/*.db
+api/*.db-journal
+web/dist/
+api/prisma/*.db
+api/*output.txt
+web/*.log
+web/*.tsbuildinfo
+api/*test*.txt
+api/test/global-setup.ts
+api/final-acceptance.txt

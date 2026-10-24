@@ -1,0 +1,28 @@
+import {beforeAll,afterAll,it,expect} from 'vitest';import request from 'supertest';import bcrypt from 'bcryptjs';
+process.env.SESSION_SECRET??='workflow-test-secret-32-bytes-minimum-value';
+process.env.DATABASE_URL='file:../unloss-simulation.db';
+process.env.DEMO_MODE='true';
+const{app,prisma}=await import('../src/server.js');
+const password='WorkflowTest!2026';let seller:any,customer:any,delivery:any,product:any,order:any,token='';
+async function login(email:string){const r=await request(app).post('/api/auth/login').send({email,password});expect(r.status).toBe(200);return r.headers['set-cookie'][0] as string}
+beforeAll(async()=>{await prisma.$executeRawUnsafe('PRAGMA foreign_keys=ON');const h=await bcrypt.hash(password,10);seller=await prisma.user.upsert({where:{email:'workflow-seller@test.invalid'},update:{passwordHash:h},create:{name:'Workflow Seller',email:'workflow-seller@test.invalid',phone:'+919900010001',role:'SELLER',passwordHash:h}});customer=await prisma.user.upsert({where:{email:'workflow-customer@test.invalid'},update:{passwordHash:h},create:{name:'Workflow Customer',email:'workflow-customer@test.invalid',phone:'+919900010002',role:'CUSTOMER',passwordHash:h}});delivery=await prisma.user.upsert({where:{email:'workflow-delivery@test.invalid'},update:{passwordHash:h},create:{name:'Workflow Delivery',email:'workflow-delivery@test.invalid',phone:'+919900010003',role:'DELIVERY',passwordHash:h}})});afterAll(async()=>{await prisma.$disconnect()});
+it('completes assigned delivery with one persistent QR and attempt-bound OTP; rejects duplicate completion',async()=>{const s=await login(seller.email);const p=await request(app).post('/api/products').set('Cookie',s).send({name:'Test mug'});expect(p.status).toBe(201);product=p.body;const created=await request(app).post('/api/orders').set('Cookie',s).send({productId:product.id,customerId:customer.id,deliveryId:delivery.id,address:'14 Lake Road, Pune'});expect(created.status).toBe(201);order=created.body;token=order.qrToken;expect(token).toBeTruthy();expect(await prisma.qrToken.count({where:{orderId:order.id}})).toBe(1);const s2=await login(seller.email);const persisted=await request(app).get(`/api/orders/${order.id}`).set('Cookie',s2);expect(persisted.body.qrToken).toBe(token);
+const d=await login(delivery.email);expect((await request(app).post('/api/scan').set('Cookie',d).send({token:'invalid-token'})).status).toBe(400);expect((await request(app).post('/api/scan').set('Cookie',d).send({token})).status).toBe(200);expect((await request(app).post(`/api/orders/${order.id}/start`).set('Cookie',d).send({})).status).toBe(200);
+const c=await login(customer.email);const scan=await request(app).post('/api/scan').set('Cookie',c).send({token});expect(scan.status).toBe(200);const challenge=(await request(app).post(`/api/orders/${order.id}/challenge`).set('Cookie',c).send({})).body;expect(challenge.devOtp).toMatch(/^\d{6}$/);const result=await request(app).post(`/api/orders/${order.id}/decision`).set('Cookie',c).send({challengeId:challenge.challengeId,otp:challenge.devOtp,decision:'ACCEPTED'});expect(result.status).toBe(200);expect(result.body.status).toBe('DELIVERED');expect((await request(app).post(`/api/orders/${order.id}/decision`).set('Cookie',c).send({challengeId:challenge.challengeId,otp:challenge.devOtp,decision:'ACCEPTED'})).status).toBe(409);expect((await prisma.statusHistory.count({where:{orderId:order.id,status:'DELIVERED'}}))).toBe(1);
+const sellerView=await request(app).get(`/api/orders/${order.id}`).set('Cookie',s);expect(sellerView.body.status).toBe('DELIVERED');expect(sellerView.body.history).toHaveLength(4);
+});
+it('preserves failed attempt and starts a new attempt for retry',async()=>{
+ const suffix=Date.now().toString();
+ const second=await prisma.user.create({data:{name:'Customer Two',email:`flow-${suffix}@unloss.test`,phone:`+9198${suffix.slice(-8)}`,role:'CUSTOMER',passwordHash:await bcrypt.hash(password,10)}});
+ const deliveryTwo=await prisma.user.create({data:{name:'Delivery Two',email:`driver-${suffix}@unloss.test`,phone:`+9197${suffix.slice(-8)}`,role:'DELIVERY',passwordHash:await bcrypt.hash(password,10)}});
+ const retryProduct=await prisma.product.create({data:{sellerId:seller.id,name:`Retry product ${suffix}`}});
+ const sellerCookie=await login(seller.email);
+ const created=await request(app).post('/api/orders').set('Cookie',sellerCookie).send({productId:retryProduct.id,customerId:second.id,deliveryId:deliveryTwo.id,address:'8 Test Street'});
+ expect(created.status).toBe(201);const o=created.body;const deliveryCookie=await login(deliveryTwo.email);
+ expect((await request(app).post('/api/scan').set('Cookie',deliveryCookie).send({token:o.qrToken})).status).toBe(200);
+ expect((await request(app).post(`/api/orders/${o.id}/start`).set('Cookie',deliveryCookie).send({})).status).toBe(200);
+ const customerCookie=await login(second.email);const challenge=(await request(app).post(`/api/orders/${o.id}/challenge`).set('Cookie',customerCookie).send({})).body;
+ const rejected=await request(app).post(`/api/orders/${o.id}/decision`).set('Cookie',customerCookie).send({challengeId:challenge.challengeId,otp:challenge.devOtp,decision:'REJECTED'});
+ expect(rejected.body.status).toBe('DELIVERY_FAILED');expect((await request(app).post('/api/scan').set('Cookie',deliveryCookie).send({token:o.qrToken})).status).toBe(200);
+ const retry=await request(app).post(`/api/orders/${o.id}/start`).set('Cookie',deliveryCookie).send({});expect(retry.status).toBe(200);expect(retry.body.attemptNumber).toBe(2);expect(await prisma.deliveryAttempt.count({where:{orderId:o.id}})).toBe(2);
+});
